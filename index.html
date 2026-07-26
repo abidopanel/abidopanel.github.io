@@ -632,8 +632,8 @@ dop_v1_9e05273049823d313a36934fe2fa929d680fb28a</textarea>
                             </select>
                             <button class="btn btn-sm btn-success">Submit</button>
                         </div>
-                        <textarea name="local-data" id="local-data" class="form-control no-wrap" rows="14" type="text">google.com
-feed.yahoo.com</textarea>
+                        <textarea name="local-data" id="local-data" class="form-control no-wrap" rows="14" type="text">8.8.8.8|google.com
+8.8.4.4|cloudflare.com</textarea>
                     </form>
                 </div>
             </div>
@@ -983,8 +983,13 @@ $(document).ready(function(){
     }
     if( getcache_localstorage("cookie_localdata_data") ){
         $('textarea[name="local-data"]').html(getcache_localstorage('cookie_localdata_data'));
-        let localdata_domains = getcache_localstorage('cookie_localdata_data').trim().split('\n').map(e => e.trim()).filter(Boolean);
-        window.localdata_set = Object.fromEntries(localdata_domains.map(e => [e, true]));
+        let localdata_raw = getcache_localstorage('cookie_localdata_data').trim().split('\n').map(e => e.trim()).filter(Boolean);
+        let domains = [];
+        localdata_raw.forEach(line => {
+            const parts = line.split('|').map(s => s.trim());
+            if (parts.length === 2 && parts[1]) domains.push(parts[1]);
+        });
+        window.localdata_set = Object.fromEntries(domains.map(e => [e, true]));
     }
 
     if( pages == 'digitalocean' || !pages || pages == null){

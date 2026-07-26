@@ -8,24 +8,17 @@ $(document).ready(async function () {
     window.doHighCpu = 0;
     window.doPostsToday = 0;
 
-    const localDomains = (getcache_localstorage('cookie_localdata_data') || '').trim().split('\n').map(s => s.trim()).filter(Boolean);
-
-    await Promise.all(localDomains.map(async (domain) => {
-        try {
-            const ipAddr = await getIpDomain('http://' + domain);
-
-            if (!ipAddr) return;
-
-            if (!ips[ipAddr]) {
-                ips[ipAddr] = [];
-            }
-
-            if (!ips[ipAddr].includes(domain)) {
-                ips[ipAddr].push(domain);
-            }
-        } catch {}
-    }));
-	window.localdata_ips = ips;
+    const localRaw = (getcache_localstorage('cookie_localdata_data') || '').trim().split('\n').map(s => s.trim()).filter(Boolean);
+    const localDomains = [];
+    localRaw.forEach(line => {
+        const parts = line.split('|').map(s => s.trim());
+        if (parts.length === 2 && parts[0] && parts[1]) {
+            if (!ips[parts[0]]) ips[parts[0]] = [];
+            if (!ips[parts[0]].includes(parts[1])) ips[parts[0]].push(parts[1]);
+            if (!localDomains.includes(parts[1])) localDomains.push(parts[1]);
+        }
+    });
+    window.localdata_ips = ips;
 
     await Promise.all(do_api_keys.map(async (keys, i) => {
         let dts = await digitalocean_account(keys);
@@ -181,16 +174,17 @@ $(document).ready(async function () {
                     let linkeddom = '';
 
                     if (zdomains) {
+                        const dropletIp = d.networks.v4[0].ip_address;
                         let list = Array.isArray(zdomains) ? zdomains : [zdomains];
 
                         let results = await Promise.all(
                             list.map(async (domain) => {
-
                                 let ipAddr = await getIpDomain('http://' + domain);
-
-                                return window.localdata_ips?.[ipAddr]
-                                    ? `<a class="clickeed" href="http://${domain}" target="_blank">${domain}</a>`
-                                    : `<a class="text-danger clicked" href="http://${domain}" target="_blank">${domain}</a>`;
+                                if (ipAddr === dropletIp) {
+                                    return `<a class="text-success" href="http://${domain}" target="_blank">${domain}</a>`;
+                                } else {
+                                    return `<a class="text-danger" href="http://${domain}" target="_blank">${domain}</a>`;
+                                }
                             })
                         );
 
