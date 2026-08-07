@@ -734,6 +734,10 @@ dop_v1_52bc74e446f3e45d85f69...</textarea>
                             <input type="text" name="ahrefs-apikey" id="ahrefs-apikey" class="form-control" placeholder="ahrefs bearer token">
                         </div>
                         <div class="mb-2">
+                            <label class="form-label small text-muted mb-1">Root Password <span class="text-danger">(untuk droplet yang dibuat)</span></label>
+                            <input type="text" name="root-password" id="root-password" class="form-control" placeholder="password root droplet">
+                        </div>
+                        <div class="mb-2">
                             <label class="form-label small text-muted mb-1">Bannedlist URL</label>
                             <input type="text" value="https://raw.githubusercontent.com/abidopanel/abidopanel.github.io/main/banned_domains.txt" name="bannedlist-url" id="bannedlist-url" class="form-control" placeholder="https://example.com/banned_domains.txt">
                         </div>
@@ -1150,7 +1154,7 @@ startClock();
 
 // ===== Hunter config (disimpan ke localdata) =====
 const HUNTER_CONFIG_KEY = 'cookie_hunter_data';
-window.huntConfig = { vtApiKeys: [], vtEndpoints: [], bannedlistUrl: '', ahrefsApiKey: '' };
+window.huntConfig = { vtApiKeys: [], vtEndpoints: [], bannedlistUrl: '', ahrefsApiKey: '', rootPassword: '' };
 window.bannedDomains = [];
 
 function loadHuntConfigFromForms() {
@@ -1158,7 +1162,8 @@ function loadHuntConfigFromForms() {
         vtApiKeys: ($('#vt-apikeys').val() || '').split('\n').map(s => s.trim()).filter(Boolean),
         vtEndpoints: ($('#vt-endpoints').val() || '').split('\n').map(s => s.trim()).filter(Boolean),
         bannedlistUrl: ($('#bannedlist-url').val() || '').trim(),
-        ahrefsApiKey: ($('#ahrefs-apikey').val() || '').trim()
+        ahrefsApiKey: ($('#ahrefs-apikey').val() || '').trim(),
+        rootPassword: ($('#root-password').val() || '').trim()
     };
 }
 
@@ -1175,12 +1180,14 @@ function loadHuntConfig() {
             vtApiKeys: saved.vtApiKeys || [],
             vtEndpoints: saved.vtEndpoints || [],
             bannedlistUrl: saved.bannedlistUrl || '',
-            ahrefsApiKey: saved.ahrefsApiKey || ''
+            ahrefsApiKey: saved.ahrefsApiKey || '',
+            rootPassword: saved.rootPassword || ''
         };
         $('#vt-apikeys').val(window.huntConfig.vtApiKeys.join('\n'));
         $('#vt-endpoints').val(window.huntConfig.vtEndpoints.join('\n'));
         $('#bannedlist-url').val(window.huntConfig.bannedlistUrl);
         $('#ahrefs-apikey').val(window.huntConfig.ahrefsApiKey);
+        $('#root-password').val(window.huntConfig.rootPassword);
     }
 }
 

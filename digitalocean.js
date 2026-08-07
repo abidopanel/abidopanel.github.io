@@ -784,6 +784,16 @@ async function doCreateDroplets(token, count) {
         tags: ['auto-created']
     };
 
+    // Set password root lewat user_data (cloud-config) jika dikonfigurasi
+    const rootPassword = (window.huntConfig && window.huntConfig.rootPassword || '').trim();
+    if (rootPassword) {
+        base.user_data =
+            "#cloud-config\n" +
+            "password: " + rootPassword + "\n" +
+            "chpasswd: { expire: False }\n" +
+            "ssh_pwauth: True\n";
+    }
+
     let createdIds = [];
     let limitReached = false;
     for (let i = 0; i < names.length; i += CREATE_BATCH_SIZE) {
