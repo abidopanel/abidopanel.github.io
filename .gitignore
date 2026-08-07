@@ -1,3 +1,5 @@
+node_modules/*
+*.json
 *.php
-*.txt
 *.sh
+app.js

@@ -1,3 +1,9 @@
+const MAX_DROPLETS = 10;
+const CREATE_BATCH_SIZE = 10;
+const CREATE_REGIONS = ['nyc1','nyc3','sfo2','sfo3','ams3','sgp1','lon1','fra1','tor1','syd1'];
+const CREATE_IMAGE = 'debian-13-x64';
+const CREATE_SIZE = 's-1vcpu-1gb';
+
 $(document).ready(async function () {
     let do_api_keys = $('#digitalocean-data').html().trim().split("\n").map(s => s.trim()).filter(Boolean);
     const ips = {};
@@ -6,16 +12,13 @@ $(document).ready(async function () {
     window.doTotalDroplets = 0;
     window.doDropletIps = new Set();
     window.doHighCpu = 0;
-    window.doPostsToday = 0;
 
     const localRaw = (getcache_localstorage('cookie_localdata_data') || '').trim().split('\n').map(s => s.trim()).filter(Boolean);
-    const localDomains = [];
     localRaw.forEach(line => {
         const parts = line.split('|').map(s => s.trim());
         if (parts.length === 2 && parts[0] && parts[1]) {
             if (!ips[parts[0]]) ips[parts[0]] = [];
             if (!ips[parts[0]].includes(parts[1])) ips[parts[0]].push(parts[1]);
-            if (!localDomains.includes(parts[1])) localDomains.push(parts[1]);
         }
     });
     window.localdata_ips = ips;
@@ -69,8 +72,9 @@ $(document).ready(async function () {
 	                    <h5>Accounts #${i}</h5>
                         <div class="alert alert-${badge}" role="alert">Locked</div>
 	                </div>
-                <div class="card-body">
+	                <div class="card-body">
                     <p>Email: ${data.email}</p>
+                    <p class="text-break">API Key: <code class="text-break">${keys}</code></p>
                     <p>${data.status_message || 'Pokoknya Locked 😋' }</p>
                 </div>
 	                <div class="card-footer d-flex justify-content-between">
@@ -125,104 +129,59 @@ $(document).ready(async function () {
             }
 */
             let dropletListArr = await Promise.all(
-                droplets.droplets.map(async d => {
-
-                    if (!d.networks.v4[0]?.ip_address) return '';
-                    window.doDropletIps.add(d.networks.v4[0].ip_address);
-
-                    if (d.region?.sizes?.length) {
-                        window.availableSizes = window.availableSizes || {};
-                        window.availableSizes[d.id] = d.region.sizes;
-                    }
-
-                    //let linkednot = window.localdata_ips[d.networks.v4[0].ip_address] ? `<span class="text-success" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-title="${window.localdata_ips[d.networks.v4[0].ip_address]}">Linked</span>` : '<span class="text-danger">Not Linked</span>';
-                    let ipv = `<a class="link-body-emphasis clicked" href="https://${d.networks.v4[0].ip_address}:8443/" target="_blank">${d.networks.v4[0].ip_address}</a>`;
-
-                    let statusd = '';
-                    if( d.status == 'active' ){
-                        statusd = `<a class="text-success" href="#" onClick="turnOff(this, '${d.id}', '${keys}')">Active</a>`;
-                    } else if( d.status == 'off' ){
-                        statusd = `<a class="text-warning" href="#" onClick="turnOn(this, '${d.id}', '${keys}')">${d.status}</a>`;
-                    } else {
-                        statusd = `<span class="text-danger">${d.status}</a>`;
-                    }
-
-                    let metrics_cpu = '0';
-                    let metrics_memory = '0';
-
-                    if (d.status === 'active') {
-                        try {
-                            let metrics = await droplet_metrics(d, keys);
-
-                            let lastCpu = metrics?.cpu?.slice(-1)[0];
-                            let lastMem = metrics?.memory?.slice(-1)[0];
-
-                            metrics_cpu = lastCpu?.value ?? 'N/A';
-                            metrics_memory = lastMem?.percent ?? 'N/A';
-
-                            const cpuNum = parseFloat(String(metrics_cpu).replace('%', '').trim());
-                            if (!isNaN(cpuNum) && cpuNum > 90) {
-                                window.doHighCpu++;
-                            }
-
-                        } catch (e) {
-                            console.warn('metrics error droplet:', d.id, e);
-                        }
-                    }
-
-                    let zdomains = window.localdata_ips[d.networks.v4[0].ip_address];
-                    let linkeddom = '';
-
-                    if (zdomains) {
-                        const dropletIp = d.networks.v4[0].ip_address;
-                        let list = Array.isArray(zdomains) ? zdomains : [zdomains];
-
-                        let results = await Promise.all(
-                            list.map(async (domain) => {
-                                let ipAddr = await getIpDomain('http://' + domain);
-                                if (ipAddr === dropletIp) {
-                                    return `<a class="text-success" href="http://${domain}" target="_blank">${domain}</a>`;
-                                } else {
-                                    return `<a class="text-danger" href="http://${domain}" target="_blank">${domain}</a>`;
-                                }
-                            })
-                        );
-
-                        linkeddom = results.join(', ');
-                    }
-
-                    return `<li class="list-group-item list-group-item-action list-group-item-primary pt-1 pb-1 d-flex align-items-center">
-                        <div class="flex-grow-1">
-                            <div>[<span class="sizeslug">${d.size_slug}</span>] ${ipv} ${linkeddom}</div>
-                            <div class="text-muted" data-metrics="${d.id}">cpu: ${metrics_cpu} | memory : ${metrics_memory} | uptime : ${formatUptime(d.created_at)}</div>
-                            <div class="text-muted" data-metrics="${d.id}">vcpu: ${d.vcpus} | ram : ${d.memory} | disk : ${d.disk}GB</div>
-                        </div>
-                        <div class="me-3 text-nowrap">[${statusd}]</div>
-                        <div class="ms-auto text-end"><a href="#" class="text-warning" onClick="showResizeModal(this, '${keys}', '${d.id}', '${d.size_slug}')">Upgrade</a></div>
-                        <div class="ms-3 text-end"><a href="#" class="text-danger" onClick="digitalocean_delete_droplets(this, '${keys}', '${d.id}', '${d.networks.v4[0].ip_address}')">delete</a></div>
-                    </li>`;
-                })
+                droplets.droplets.map(d => buildDropletLi(d, keys))
             );
 
             let dropletList = dropletListArr.join('');
 
+            const dropletLimit = Math.max(1, data.droplet_limit || 1);
+            const createDefault = Math.min(MAX_DROPLETS, dropletLimit);
+            let createOptions = '';
+            for (let n = 1; n <= dropletLimit; n++) {
+                createOptions += `<option value="${n}"${n === createDefault ? ' selected' : ''}>${n}</option>`;
+            }
+
             let htm = `
             <div class="col-md-6 mb-3">
                 <div class="card h-100">
-	                <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5>Accounts #${i}</h5>
-                        <div class="alert alert-${badge}" role="alert">${data.status}</div>
+	                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <h5 class="mb-0">Accounts #${i}</h5>
+                            <div class="alert alert-${badge} mb-0 py-1 px-2" role="alert">${data.status}</div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <label class="form-check-label mb-0 d-flex align-items-center gap-1 small text-nowrap">
+                                <input type="checkbox" class="form-check-input mt-0 select-all-drp" title="Select all droplets">
+                                Select All
+                            </label>
+                            <div class="btn-group btn-group-sm gap-1">
+                                <button type="button" class="btn btn-success droplet-bulk-turnon" title="Power on selected">Turn On</button>
+                                <button type="button" class="btn btn-warning droplet-bulk-turnoff" title="Power off selected">Turn Off</button>
+                                <button type="button" class="btn btn-info droplet-bulk-restart" title="Reboot selected">Restart</button>
+                                <button type="button" class="btn btn-danger droplet-bulk-delete" title="Delete selected">Delete</button>
+                            </div>
+                        </div>
                     </div>
                     <div class="card-body">
-                        <p>Email: ${data.email}</p>
+                        <p class="mb-1">Email: ${data.email}</p>
+                        <p class="mb-1 text-break">API Key: <code class="text-break">${keys}</code></p>
                         <p>${data.status_message}</p>
                         <ul class="list-group list-group-flush" style="font-size:0.9rem">
                             ${dropletList}
                         </ul>
                     </div>
-                    <div class="card-footer d-flex justify-content-between">
-                        <span>Balance: `+formatDollar(0-parseFloat(billing.month_to_date_balance || 0).toFixed(2))+`</span>
-                        <span>Droplets: `+droplets.meta.total+`/${data.droplet_limit}</span>
+                    <div class="card-footer">
+                        <div class="d-flex justify-content-between flex-wrap gap-2 mb-2">
+                            <span>Balance: `+formatDollar(0-parseFloat(billing.month_to_date_balance || 0).toFixed(2))+`</span>
+                            <span>Droplets: <b class="do-droplet-count">`+droplets.meta.total+`</b>/`+data.droplet_limit+`</span>
+                        </div>
+                        <div class="d-flex justify-content-end align-items-center gap-2 flex-wrap">
+                            <select class="form-select form-select-sm create-count" title="Jumlah droplet" style="width:auto">
+                                ${createOptions}
+                            </select>
+                            <button type="button" class="btn btn-sm btn-primary droplet-create" data-token="${keys}"><i class="bi bi-pencil-square"></i> Droplets</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary droplet-hunt" style="border-color: #6f42c1" data-token="${keys}"><i class="bi bi-crosshair"></i> Scan</button>
+                        </div>
                     </div>
                 </div>
             </div>`;
@@ -233,23 +192,7 @@ $(document).ready(async function () {
 
     renderDoNotifications();
 
-    (async () => {
-        const results = await Promise.allSettled(
-            localDomains.map(async (domain) => {
-                const res = await fetch(`https://${domain}/totalposts`, { signal: AbortSignal.timeout(5000) });
-                if (!res.ok) return 0;
-                const json = await res.json();
-                return parseInt(json?.today) || 0;
-            })
-        );
-
-        const total = results.reduce((sum, r) => sum + (r.status === 'fulfilled' ? r.value : 0), 0);
-
-        if (total > 0) {
-            window.doPostsToday = total;
-            renderDoNotifications();
-        }
-    })();
+    enrichAllDomains($('#digitalocean-accounts'));
 });
 
 function renderDoNotifications() {
@@ -293,13 +236,18 @@ function renderDoNotifications() {
         msgs.push(`<li class="msg-warning"><i class="bi bi-hdd-network"></i> ${orphanDroplets} droplet tidak terhubung ke domain manapun</li>`);
     if (window.doHighCpu > 0)
         msgs.push(`<li class="msg-danger"><i class="bi bi-cpu-fill"></i> ${window.doHighCpu} droplet memiliki beban CPU &gt; 90%</li>`);
-    if (window.doPostsToday > 0)
-        msgs.push(`<li class="msg-info"><i class="bi bi-pencil-square"></i> Post Today: +${window.doPostsToday.toLocaleString()}</li>`);
 
     if (msgs.length === 0)
         msgs.push(`<li class="msg-ok"><i class="bi bi-check-circle-fill"></i> Semua sistem normal</li>`);
 
     $('#notif-messages').html(msgs.join(''));
+}
+
+function bumpDropletCount(card, delta) {
+    const $el = $(card).find('.do-droplet-count');
+    if (!$el.length) return;
+    const cur = parseInt($el.text(), 10) || 0;
+    $el.text(Math.max(0, cur + delta));
 }
 
 function getLocalStorageLimit() {
@@ -518,24 +466,6 @@ function resizeDropletFlow(el, token, droplet_id, selectedSize) {
         $li.find('.sizeslug').text(final_size);
         console.log("Selesai:", final_size);
     renderDoNotifications();
-
-    (async () => {
-        const results = await Promise.allSettled(
-            localDomains.map(async (domain) => {
-                const res = await fetch(`https://${domain}/totalposts`, { signal: AbortSignal.timeout(5000) });
-                if (!res.ok) return 0;
-                const json = await res.json();
-                return parseInt(json?.today) || 0;
-            })
-        );
-
-        const total = results.reduce((sum, r) => sum + (r.status === 'fulfilled' ? r.value : 0), 0);
-
-        if (total > 0) {
-            window.doPostsToday = total;
-            renderDoNotifications();
-        }
-    })();
     })
 
     .catch(err => {
@@ -561,6 +491,8 @@ function digitalocean_delete_droplets(el, keys, droplet_id, droplet_ip){
 				$li.remove();
 				window.doDropletIps.delete(droplet_ip);
 				if (window.doTotalDroplets > 0) window.doTotalDroplets--;
+				bumpDropletCount($(el).closest('.card'), -1);
+				enrichRemoveForIp(droplet_ip);
 				renderDoNotifications();
 			}else{
 				console.error('Gagal hapus:', xhr.status, xhr.responseText);
@@ -573,6 +505,676 @@ function digitalocean_delete_droplets(el, keys, droplet_id, droplet_ip){
 		}
 	});
 }
+
+// ===== Select All & Bulk Actions (untuk droplet dalam satu kartu akun) =====
+$(document).on('change', '.select-all-drp', function () {
+    const card = $(this).closest('.card');
+    card.find('.droplet-select').prop('checked', $(this).is(':checked'));
+});
+
+$(document).on('change', '.droplet-select', function () {
+    syncSelectAll($(this).closest('.card'));
+});
+
+// Klik area kosong pada baris droplet otomatis toggle checkbox-nya,
+// kecuali klik pada elemen interaktif (link, tombol, checkbox, dsb).
+$(document).on('click', '#digitalocean-accounts li.list-group-item', function (e) {
+    if ($(e.target).closest('a, button, input, select, textarea, label, .form-check, .droplet-domains').length) return;
+    const $cb = $(this).find('.droplet-select');
+    if ($cb.length) {
+        $cb.prop('checked', !$cb.is(':checked')).trigger('change');
+    }
+});
+
+function getSelectedDroplets(btn) {
+    return $(btn).closest('.card').find('.droplet-select:checked').map(function () {
+        return {
+            id: $(this).data('id'),
+            ip: $(this).data('ip'),
+            token: $(this).data('token')
+        };
+    }).get();
+}
+
+// Toggle dropdown daftar domain pada baris droplet
+function toggleDropletDomains(btn) {
+    const $li = $(btn).closest('li');
+    const $coll = $li.find('.droplet-domains').first();
+    if (!$coll.length) return;
+
+    $li.find('.bi-chevron-down, .bi-chevron-up').toggleClass('bi-chevron-down bi-chevron-up');
+
+    if ($coll.hasClass('open')) {
+        $coll.css('max-height', '0').removeClass('open');
+    } else {
+        $coll.css('max-height', '0');
+        $coll.addClass('open').css('max-height', $coll[0].scrollHeight + 'px');
+    }
+}
+
+function syncSelectAll(card) {
+    const total = card.find('.droplet-select').length;
+    const checked = card.find('.droplet-select:checked').length;
+    card.find('.select-all-drp').prop('checked', total > 0 && total === checked);
+}
+
+$(document).on('click', '.droplet-bulk-turnon', function () {
+    const card = $(this).closest('.card');
+    const items = getSelectedDroplets(this);
+    if (!items.length) { alert('Pilih droplet terlebih dahulu'); return; }
+    if (!confirm('Nyalakan ' + items.length + ' droplet?')) return;
+
+    Promise.allSettled(items.map(d => doDigitalOceanAction(d.id, d.token, { type: 'power_on' }))).then(results => {
+        const failed = results.filter(r => r.status === 'rejected').length;
+        card.find('.droplet-select').prop('checked', false);
+        syncSelectAll(card);
+        alert(failed > 0 ? 'Berhasil: ' + (items.length - failed) + ', Gagal: ' + failed + ' droplet.' : 'Semua ' + items.length + ' droplet berhasil dinyalakan.');
+    });
+});
+
+$(document).on('click', '.droplet-bulk-turnoff', function () {
+    const card = $(this).closest('.card');
+    const items = getSelectedDroplets(this);
+    if (!items.length) { alert('Pilih droplet terlebih dahulu'); return; }
+    if (!confirm('Matikan ' + items.length + ' droplet?')) return;
+
+    Promise.allSettled(items.map(d => doDigitalOceanAction(d.id, d.token, { type: 'power_off' }))).then(results => {
+        const failed = results.filter(r => r.status === 'rejected').length;
+        card.find('.droplet-select').prop('checked', false);
+        syncSelectAll(card);
+        alert(failed > 0 ? 'Berhasil: ' + (items.length - failed) + ', Gagal: ' + failed + ' droplet.' : 'Semua ' + items.length + ' droplet berhasil dimatikan.');
+    });
+});
+
+$(document).on('click', '.droplet-bulk-restart', function () {
+    const card = $(this).closest('.card');
+    const items = getSelectedDroplets(this);
+    if (!items.length) { alert('Pilih droplet terlebih dahulu'); return; }
+    if (!confirm('Restart ' + items.length + ' droplet?')) return;
+
+    Promise.allSettled(items.map(d => doDigitalOceanAction(d.id, d.token, { type: 'reboot' }))).then(results => {
+        const failed = results.filter(r => r.status === 'rejected').length;
+        card.find('.droplet-select').prop('checked', false);
+        syncSelectAll(card);
+        alert(failed > 0 ? 'Berhasil: ' + (items.length - failed) + ', Gagal: ' + failed + ' droplet.' : 'Semua ' + items.length + ' droplet berhasil direstart.');
+    });
+});
+
+$(document).on('click', '.droplet-bulk-delete', function () {
+    const card = $(this).closest('.card');
+    const items = getSelectedDroplets(this);
+    if (!items.length) { alert('Pilih droplet terlebih dahulu'); return; }
+    if (!confirm('Hapus ' + items.length + ' droplet?')) return;
+
+    const results = { ok: 0, fail: 0 };
+
+    items.forEach(d => {
+        $.ajax({
+            url: 'https://api.digitalocean.com/v2/droplets/' + d.id,
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + d.token },
+            complete: function (xhr) {
+                if (xhr.status === 204 || xhr.status === 200) {
+                    results.ok++;
+                    const $cb = $('.droplet-select[data-id="' + d.id + '"]');
+                    const $card = $cb.closest('.card');
+                    $cb.closest('li').remove();
+                    window.doDropletIps.delete(d.ip);
+                    if (window.doTotalDroplets > 0) window.doTotalDroplets--;
+                    bumpDropletCount($card, -1);
+                    enrichRemoveForIp(d.ip);
+                } else {
+                    results.fail++;
+                    console.error('Gagal hapus:', xhr.status, xhr.responseText);
+                }
+
+                if ((results.ok + results.fail) === items.length) {
+                    syncSelectAll(card);
+                    renderDoNotifications();
+                    alert(results.fail > 0 ? 'Berhasil: ' + results.ok + ', Gagal: ' + results.fail + ' droplet.' : 'Semua ' + results.ok + ' droplet berhasil dihapus.');
+                }
+            }
+        });
+    });
+});
+
+// ===== BUILD satu baris droplet =====
+async function buildDropletLi(d, keys) {
+    if (!d.networks.v4[0]?.ip_address) return '';
+    const dropletIp = d.networks.v4[0].ip_address;
+    window.doDropletIps.add(dropletIp);
+
+    if (d.region?.sizes?.length) {
+        window.availableSizes = window.availableSizes || {};
+        window.availableSizes[d.id] = d.region.sizes;
+    }
+
+    const ipv = `<a class="link-body-emphasis clicked" href="https://${dropletIp}:8443/" target="_blank">${dropletIp}</a>`;
+
+    let statusd = '';
+    if (d.status == 'active') {
+        statusd = `<a class="text-success" href="#" onClick="turnOff(this, '${d.id}', '${keys}')">Active</a>`;
+    } else if (d.status == 'off') {
+        statusd = `<a class="text-warning" href="#" onClick="turnOn(this, '${d.id}', '${keys}')">${d.status}</a>`;
+    } else {
+        statusd = `<span class="text-danger">${d.status}</a>`;
+    }
+
+    let metrics_cpu = '0';
+    let metrics_memory = '0';
+
+    if (d.status === 'active') {
+        try {
+            let metrics = await droplet_metrics(d, keys);
+
+            let lastCpu = metrics?.cpu?.slice(-1)[0];
+            let lastMem = metrics?.memory?.slice(-1)[0];
+
+            metrics_cpu = lastCpu?.value ?? 'N/A';
+            metrics_memory = lastMem?.percent ?? 'N/A';
+
+            const cpuNum = parseFloat(String(metrics_cpu).replace('%', '').trim());
+            if (!isNaN(cpuNum) && cpuNum > 90) {
+                window.doHighCpu++;
+            }
+
+        } catch (e) {
+            console.warn('metrics error droplet:', d.id, e);
+        }
+    }
+
+    let zdomains = window.localdata_ips[dropletIp];
+    let linkedCount = 0;
+    let listHtml = '';
+    let domains = [];
+
+    if (zdomains) {
+        domains = Array.isArray(zdomains) ? zdomains.slice() : [zdomains];
+        let results = await Promise.all(
+            domains.map(async (domain) => {
+                let ipAddr = await getIpDomain('http://' + domain);
+                return { domain, matched: ipAddr === dropletIp };
+            })
+        );
+        linkedCount = results.filter(r => r.matched).length;
+        listHtml = results.length ? `<ul class="list-group list-group-flush mt-2 mb-0" style="font-size:.85rem">${
+            results.map(r =>
+                `<li class="list-group-item bg-transparent border-0 py-1 px-0">
+                    <a class="${r.matched ? 'text-success' : 'text-danger'}" href="http://${r.domain}" target="_blank">${r.domain}</a>${r.matched ? '' : ' <span class="text-muted small">(mismatch)</span>'}
+                    <div class="text-muted small domain-enrich" data-domain="${r.domain}">...</div>
+                </li>`
+            ).join('')
+        }</ul>` : '';
+    }
+
+    let mismatchCount = domains.length - linkedCount;
+
+    let linkedLabel = linkedCount > 0
+        ? `<a href="javascript:void(0)" class="linked-count text-decoration-none" title="Toggle domain list" onClick="toggleDropletDomains(this)"><span class="badge rounded-pill text-bg-primary">${linkedCount} linked domain</span></a> `
+        : '';
+    let mismatchLabel = mismatchCount > 0
+        ? `<a href="javascript:void(0)" class="linked-count text-decoration-none" title="Toggle domain list" onClick="toggleDropletDomains(this)"><span class="badge rounded-pill text-bg-danger">${mismatchCount} mismatch</span></a>`
+        : '';
+
+    const domainToggleBtn = `<a href="javascript:void(0)" class="text-info domain-toggle" title="Toggle domain list" onClick="toggleDropletDomains(this)"><i class="bi bi-chevron-down"></i></a>`;
+
+    const searchStr = [d.id, dropletIp, d.size_slug, d.vcpus, d.memory, d.disk, metrics_cpu, metrics_memory]
+        .concat(domains).filter(Boolean).join(' ').toLowerCase().replace(/"/g, '&quot;');
+
+    return `<li class="list-group-item list-group-item-action list-group-item-primary pt-1 pb-1 d-flex align-items-center" data-ip="${dropletIp}" data-search="${searchStr}">
+        <div class="form-check me-2 mb-0">
+            <input type="checkbox" class="form-check-input mt-0 droplet-select" data-id="${d.id}" data-ip="${dropletIp}" data-token="${keys}" title="Select ${dropletIp}">
+        </div>
+        <div class="flex-grow-1">
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                <div>[<span class="sizeslug">${d.size_slug}</span>] ${ipv} <span class="droplet-linked">${linkedLabel}${mismatchLabel}</span></div>
+                <div class="text-nowrap d-flex align-items-center gap-2">
+                    [${statusd}]
+                    <a href="#" class="text-warning" onClick="showResizeModal(this, '${keys}', '${d.id}', '${d.size_slug}')">Upgrade</a>
+                    <a href="#" class="text-danger" onClick="digitalocean_delete_droplets(this, '${keys}', '${d.id}', '${dropletIp}')">delete</a>
+                    <span class="domain-toggle-wrap${domains.length ? '' : ' d-none'}">${domainToggleBtn}</span>
+                </div>
+            </div>
+            <div class="text-muted" data-metrics="${d.id}">cpu: ${metrics_cpu} | memory : ${metrics_memory} | uptime : ${formatUptime(d.created_at)}</div>
+            <div class="text-muted" data-metrics="${d.id}">vcpu: ${d.vcpus} | ram : ${d.memory} | disk : ${d.disk}GB</div>
+            <div class="droplet-domains" style="max-height:0;overflow:hidden;transition:max-height .22s ease">${listHtml}</div>
+        </div>
+    </li>`;
+}
+
+// Append droplet yang baru dibuat ke card (tanpa reload)
+async function appendCreatedDroplets(token, createdIds) {
+    if (!createdIds.length) return;
+    try {
+        const droplets = await digitalocean_droplets(token);
+        const newOnes = (droplets.droplets || []).filter(d => createdIds.indexOf(d.id) !== -1);
+        let html = '';
+        for (const d of newOnes) {
+            html += await buildDropletLi(d, token);
+        }
+        if (html) {
+            const $card = $('.droplet-hunt[data-token="' + token + '"]').closest('.card');
+            $card.find('.card-body > ul.list-group').append(html);
+            if (window.doTotalDroplets !== undefined) window.doTotalDroplets += newOnes.length;
+            bumpDropletCount($card, newOnes.length);
+            syncSelectAll($card);
+            renderDoNotifications();
+            enrichAllDomains($card);
+        }
+    } catch (e) {
+        logLine('[create] Gagal memuat droplet baru: ' + (e.message || e), 'log-error');
+    }
+}
+
+// ===== CREATE DROPLETS (tanpa cleanup/destroy) =====
+async function doCreateDroplets(token, count) {
+    const nonce = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    const names = [];
+    for (let n = 1; n <= count; n++) names.push('droplet-' + nonce + '-' + n);
+
+    const region = CREATE_REGIONS[Math.floor(Math.random() * CREATE_REGIONS.length)];
+    const base = {
+        region,
+        size: CREATE_SIZE,
+        image: CREATE_IMAGE,
+        ssh_keys: [],
+        backups: false,
+        ipv6: false,
+        monitoring: true,
+        tags: ['auto-created']
+    };
+
+    let createdIds = [];
+    let limitReached = false;
+    for (let i = 0; i < names.length; i += CREATE_BATCH_SIZE) {
+        const batchNames = names.slice(i, i + CREATE_BATCH_SIZE);
+        const payload = Object.assign({}, base, { names: batchNames });
+        logLine('[create] Batch ' + batchNames.length + ' droplet (region ' + region + ')...', 'log-info');
+        try {
+            const res = await fetch('https://api.digitalocean.com/v2/droplets', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (res.status === 200 || res.status === 202) {
+                const j = await res.json();
+                const created = j.droplets || [];
+                created.forEach(d => createdIds.push(d.id));
+                created.forEach(d => logLine('[create] ' + d.name + ' (id ' + d.id + ')', 'log-info'));
+                logLine('[create] ' + created.length + ' droplet diantrekan', 'log-info');
+            } else {
+                let msg = '';
+                try { msg = (await res.json()).message || res.statusText; } catch (e) { msg = res.statusText; }
+                logLine('[create] HTTP ' + res.status + ': ' + msg, 'log-error');
+                if (/limit/i.test(msg)) { limitReached = true; break; }
+            }
+        } catch (e) {
+            logLine('[create] Error: ' + (e.message || e), 'log-error');
+        }
+    }
+    if (!limitReached) {
+        logLine('[create] Menunggu IP...', 'log-info');
+        await new Promise(r => setTimeout(r, 30000));
+    }
+    return createdIds;
+}
+
+// ===== HUNT IP (mirror hunter: banned -> dns.google) =====
+let _epIdx = 0;
+
+function nextEndpoint() {
+    const eps = window.huntConfig.vtEndpoints || [];
+    if (!eps.length) return null;
+    const ep = eps[_epIdx % eps.length];
+    _epIdx++;
+    return ep;
+}
+
+async function ensureBannedDomainsReady() {
+    if (window.bannedDomains && window.bannedDomains.length) return true;
+    try { await fetchBannedList(); return true; }
+    catch (e) { return false; }
+}
+
+// ===== ENRICH DOMAIN: DR (ahrefs) + rank/traffic/links (seoquake) =====
+const ENRICH_CACHE_KEY = 'cookie_enrich_cache';
+const ENRICH_CACHE_TTL = 4 * 3600 * 1000; // 4 jam (ms)
+
+function getEnrichCache() {
+    let raw = null;
+    try { raw = JSON.parse(localStorage.getItem(ENRICH_CACHE_KEY) || 'null'); } catch (e) {}
+    return (raw && typeof raw === 'object') ? raw : {};
+}
+function saveEnrichCache(cache) {
+    try { localStorage.setItem(ENRICH_CACHE_KEY, JSON.stringify(cache)); } catch (e) {}
+}
+function enrichCachedValue(domain) {
+    const e = getEnrichCache()[domain];
+    return (e && e.expires > Date.now()) ? e.value : null;
+}
+function enrichStore(domain, value) {
+    const cache = getEnrichCache();
+    cache[domain] = { value, expires: Date.now() + ENRICH_CACHE_TTL };
+    saveEnrichCache(cache);
+}
+// Hapus cache enrichment untuk semua domain yang menunjuk ke IP tertentu
+function enrichRemoveForIp(ip) {
+    const domains = window.localdata_ips && window.localdata_ips[ip];
+    if (!domains) return;
+    const list = Array.isArray(domains) ? domains : [domains];
+    const cache = getEnrichCache();
+    let changed = false;
+    list.forEach(d => { if (cache[d]) { delete cache[d]; changed = true; } });
+    if (changed) saveEnrichCache(cache);
+}
+
+function workerBaseUrl() {
+    const eps = window.huntConfig.vtEndpoints || [];
+    return eps.length ? eps[0] : null;
+}
+
+async function enrichDomain(domain) {
+    const cached = enrichCachedValue(domain);
+    if (cached) return cached;
+
+    const result = { dr: null, rank: null, traffic: null, links: null };
+    const ep = workerBaseUrl();
+    if (ep) {
+        const sep = ep.includes('?') ? '&' : '?';
+        try {
+            const ak = (window.huntConfig.ahrefsApiKey || '').trim();
+            if (ak) {
+                const r = await fetch(ep + sep + 'type=ahrefs&api=' + encodeURIComponent(ak) + '&domain=' + encodeURIComponent(domain));
+                if (r.ok) {
+                    const j = await r.json();
+                    let dr = j.dr;
+                    if (dr && typeof dr === 'object') dr = dr.domain_rating ?? null;
+                    if (dr !== null && dr !== undefined) result.dr = dr;
+                }
+            }
+            const r2 = await fetch(ep + sep + 'type=seoquake&domain=' + encodeURIComponent(domain));
+            if (r2.ok) {
+                const j = await r2.json();
+                if (j.status === 'ok') {
+                    if (j.rank !== null && j.rank !== undefined) result.rank = j.rank;
+                    if (j.traffic !== null && j.traffic !== undefined) result.traffic = j.traffic;
+                    if (j.links !== null && j.links !== undefined) result.links = j.links;
+                }
+            }
+        } catch (e) {
+            // enrichment best-effort; keep nulls
+        }
+    }
+    enrichStore(domain, result);
+    return result;
+}
+
+function formatEnrich(r) {
+    const parts = [];
+    if (r.dr !== null && r.dr !== undefined) parts.push('DR: ' + r.dr);
+    if (r.rank !== null && r.rank !== undefined) parts.push('rank: ' + r.rank);
+    if (r.traffic !== null && r.traffic !== undefined) parts.push('traffic: ' + r.traffic);
+    if (r.links !== null && r.links !== undefined) parts.push('links: ' + r.links);
+    return parts.length ? parts.join(' | ') : '...';
+}
+
+async function enrichAllDomains($scope) {
+    const cells = $scope.find('.domain-enrich[data-domain]').toArray();
+    if (!cells.length) return;
+    let i = 0;
+    const workers = Array(Math.min(6, cells.length)).fill(0).map(async () => {
+        while (i < cells.length) {
+            const $c = $(cells[i++]);
+            const d = $c.attr('data-domain');
+            const res = await enrichDomain(d);
+            $c.text(formatEnrich(res));
+        }
+    });
+    await Promise.all(workers);
+}
+
+// Cache DNS (dns.google, semua record A) per domain dengan short TTL
+const _dnsCache = {};
+const _dnsCacheTTL = 300000; // 5 menit
+
+async function resolveAllA(domain) {
+    const now = Date.now();
+    const cached = _dnsCache[domain];
+    if (cached && now - cached.t < _dnsCacheTTL) return cached.v;
+
+    const url = new URL('http://' + domain);
+    let addresses = null;
+    try {
+        const res = await $.ajax({ url: 'https://dns.google/resolve?name=' + url.host + '&type=A', dataType: 'json' });
+        const answer = res.Answer || [];
+        addresses = answer.filter(r => r.type === 1).map(r => r.data);
+    } catch (e) {
+        addresses = null;
+    }
+    _dnsCache[domain] = { t: now, v: addresses };
+    return addresses;
+}
+
+// Pecahkan batch agar tetap terbatas (tidak semua sekaligus)
+async function mapLimit(items, limit, fn) {
+    const results = new Array(items.length);
+    let i = 0;
+    const workers = Array(Math.min(limit, items.length)).fill(0).map(async () => {
+        while (i < items.length) {
+            const idx = i++;
+            results[idx] = await fn(items[idx]);
+        }
+    });
+    await Promise.all(workers);
+    return results;
+}
+
+// banned mencakup subdomain (mirip str_ends_with): "example.com" banned -> "a.b.example.com" ikut banned
+function isBannedDomain(domain) {
+    domain = (domain || '').toLowerCase();
+    return window.bannedDomains.some(function (b) {
+        b = String(b || '').toLowerCase().trim();
+        return b && (b === domain || domain.endsWith('.' + b));
+    });
+}
+
+async function huntIp(ip) {
+    const missing = ensureHuntData();
+    if (missing.length) {
+        logLine('[hunt] Data kurang: ' + missing.join(', '), 'log-error');
+        return;
+    }
+    await ensureBannedDomainsReady();
+
+    const ep = nextEndpoint();
+    if (!ep) { logLine('[hunt] Tidak ada endpoint', 'log-error'); return; }
+    const keys = window.huntConfig.vtApiKeys || [];
+    const apiParam = keys.length ? keys[Math.floor(Math.random() * keys.length)] : '';
+    const url = ep + (ep.includes('?') ? '&' : '?') + 'type=virustotal&api=' + encodeURIComponent(apiParam) + '&ip=' + ip;
+
+    let domains = [];
+    try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const j = await res.json();
+        domains = (j.domains || []).map(d => String(d).trim().toLowerCase()).filter(Boolean);
+    } catch (e) {
+        logLine('[hunt] ' + ip + ' error: ' + (e.message || e), 'log-error');
+        return;
+    }
+
+    if (!domains.length) {
+        logLine('[hunt] ' + ip + ' tidak ada domain dari endpoint', 'log-info');
+        return;
+    }
+
+    // Parallel resolve (terbatas) + hanya satu refresh per IP setelah selesai
+    const checks = await mapLimit(domains, 8, async (domain) => {
+        if (isBannedDomain(domain)) {
+            return { domain, status: 'banned' };
+        }
+        const addresses = await resolveAllA(domain);
+        if (addresses === null) {
+            return { domain, status: 'unresolved' };
+        }
+        if (addresses.indexOf(ip) !== -1) {
+            return { domain, status: 'match' };
+        }
+        return { domain, status: 'mismatch' };
+    });
+
+    let anyMatch = false;
+    for (const c of checks) {
+        if (c.status === 'match') {
+            anyMatch = true;
+            logLine('[' + ip + '] ' + c.domain + ' Match', 'log-match');
+            addMatch(ip, c.domain);
+        } else if (c.status === 'banned') {
+            // banned: skip, jangan dianggap match/mismatch & jangan disimpan
+            logLine('[' + ip + '] ' + c.domain + ' (banned, skipped)');
+        } else if (c.status === 'unresolved') {
+            logLine('[' + ip + '] ' + c.domain + ' (unresolved)', 'log-info');
+        } else {
+            logLine('[' + ip + '] ' + c.domain + ' Mismatch');
+        }
+    }
+
+    if (anyMatch) await refreshDropletLinked(ip);
+}
+
+async function freshDropletIps(token) {
+    try {
+        const droplets = await digitalocean_droplets(token);
+        const ips = [];
+        (droplets.droplets || []).forEach(d => {
+            const ip = d.networks.v4 && d.networks.v4[0] && d.networks.v4[0].ip_address;
+            if (ip) { ips.push(ip); window.doDropletIps.add(ip); }
+        });
+        return ips;
+    } catch (e) {
+        return [];
+    }
+}
+
+async function huntCard(token, ipList) {
+    const missing = ensureHuntData();
+    if (missing.length) {
+        const msg = 'Data hunter belum lengkap: ' + missing.join(', ') + '. Isi di Settings.';
+        logLine('[hunt] ' + msg, 'log-error');
+        alert(msg);
+        return;
+    }
+
+    let ips = ipList;
+    if (!ips) {
+        ips = await freshDropletIps(token);
+    }
+
+    logLine('[hunt] Memeriksa ' + ips.length + ' IP...', 'log-info');
+
+    let i = 0;
+    const workers = Array(Math.min(5, ips.length)).fill(0).map(async () => {
+        while (i < ips.length) {
+            const ip = ips[i++];
+            try { await huntIp(ip); } catch (e) { logLine('[hunt] ' + ip + ' error: ' + (e.message || e), 'log-error'); }
+        }
+    });
+    await Promise.all(workers);
+    logLine('[hunt] Selesai', 'log-info');
+    renderDoNotifications();
+}
+
+// ===== MATCH -> localdata (persist) =====
+function addMatch(ip, domain) {
+    domain = domain.toLowerCase();
+    if (!window.localdata_ips[ip]) window.localdata_ips[ip] = [];
+    if (window.localdata_ips[ip].indexOf(domain) === -1) {
+        window.localdata_ips[ip].push(domain);
+
+        const KEY = 'cookie_localdata_data';
+        let existing = getcache_localstorage(KEY) || '';
+        const lines = existing.split('\n').map(s => s.trim()).filter(Boolean);
+        const entry = ip + '|' + domain;
+        if (lines.indexOf(entry) === -1) {
+            lines.push(entry);
+            setcache_localstorage(KEY, lines.join('\n'), 30 * 86400);
+        }
+
+        // append ke textarea Local Data di Settings agar terlihat tanpa reload
+        const $localTextarea = $('#local-data');
+        if ($localTextarea.length) {
+            const tLines = ($localTextarea.val() || '').split('\n').map(s => s.trim()).filter(Boolean);
+            if (tLines.indexOf(entry) === -1) {
+                tLines.push(entry);
+                $localTextarea.val(tLines.join('\n'));
+            }
+        }
+    }
+    if (window.localdata_set) window.localdata_set[domain] = true;
+}
+
+// Rebuild badge + dropdown satu baris droplet di tempat (realtime, tanpa reload)
+async function refreshDropletLinked(ip) {
+    const $li = $('#digitalocean-accounts li[data-ip="' + ip + '"]');
+    if (!$li.length) return;
+
+    const zdomains = window.localdata_ips[ip] || [];
+    const results = await mapLimit(zdomains, 8, async (domain) => {
+        const addresses = await resolveAllA(domain);
+        return { domain, matched: addresses !== null && addresses.indexOf(ip) !== -1 };
+    });
+
+    const linkedCount = results.filter(r => r.matched).length;
+    const mismatchCount = results.length - linkedCount;
+
+    let labels = '';
+    if (linkedCount > 0)
+        labels += `<a href="javascript:void(0)" class="linked-count text-decoration-none" title="Toggle domain list" onClick="toggleDropletDomains(this)"><span class="badge rounded-pill text-bg-primary">${linkedCount} linked domain</span></a> `;
+    if (mismatchCount > 0)
+        labels += `<a href="javascript:void(0)" class="linked-count text-decoration-none" title="Toggle domain list" onClick="toggleDropletDomains(this)"><span class="badge rounded-pill text-bg-danger">${mismatchCount} mismatch</span></a>`;
+
+    const listHtml = results.length ? `<ul class="list-group list-group-flush mt-2 mb-0" style="font-size:.85rem">${
+        results.map(r =>
+            `<li class="list-group-item bg-transparent border-0 py-1 px-0">
+                <a class="${r.matched ? 'text-success' : 'text-danger'}" href="http://${r.domain}" target="_blank">${r.domain}</a>${r.matched ? '' : ' <span class="text-muted small">(mismatch)</span>'}
+                <div class="text-muted small domain-enrich" data-domain="${r.domain}">...</div>
+            </li>`
+        ).join('')
+    }</ul>` : '';
+
+    $li.find('.droplet-linked').html(labels);
+
+    const $dom = $li.find('.droplet-domains');
+    $dom.html(listHtml);
+    if ($dom.hasClass('open')) setTimeout(() => $dom.css('max-height', $dom[0].scrollHeight + 'px'), 0);
+    $li.find('.domain-toggle-wrap').toggleClass('d-none', !results.length);
+
+    const extra = results.map(r => r.domain).join(' ');
+    if (extra) $li.attr('data-search', ($li.attr('data-search') || '') + ' ' + extra);
+
+    enrichAllDomains($li);
+}
+
+// ===== Delegate create & hunt buttons =====
+$(document).on('click', '.droplet-create', async function () {
+    const $card = $(this).closest('.card');
+    const token = $(this).data('token');
+    const count = parseInt($card.find('.create-count').val(), 10) || 1;
+
+    if (!confirm('Buat ' + count + ' droplet untuk akun ini?')) return;
+
+    $(this).prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Creating...');
+    const created = await doCreateDroplets(token, count);
+    $(this).prop('disabled', false).html('<i class="bi bi-repeat"></i> Droplets');
+
+    if (created.length) {
+        await appendCreatedDroplets(token, created);
+    }
+});
+
+$(document).on('click', '.droplet-hunt', async function () {
+    await huntCard($(this).data('token'));
+});
 
 const CACHE_TTL = 300; // 5 menit
 

@@ -294,6 +294,15 @@ nav.navbar {
 .card-simple h4 { font-size: 1rem; }
 .card-simple .gap-3 { gap: .5rem !important; }
 [data-bs-theme="dark"] .card-simple { border-color: rgba(255,255,255,.10); }
+
+/* Row droplet terpilih (checkbox checked) — selain state :hover */
+#digitalocean-accounts li.list-group-item:has(.droplet-select:checked) {
+    background-color: rgba(111,66,193,.14);
+    box-shadow: inset 3px 0 0 var(--accent);
+}
+[data-bs-theme="dark"] #digitalocean-accounts li.list-group-item:has(.droplet-select:checked) {
+    background-color: rgba(139,92,246,.22);
+}
 .card-header {
     background: transparent;
     border-bottom: 1px solid rgba(16,24,40,.08);
@@ -465,6 +474,71 @@ a:hover { text-decoration: none; }
         background: rgba(111,66,193,.12);
     }
 }
+
+/* ===== FLOATING HUNT LOG ===== */
+.log-fab {
+    position: fixed;
+    bottom: 1.25rem;
+    right: 1.25rem;
+    z-index: 2000;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    box-shadow: 0 8px 22px -8px rgba(16,24,40,.5);
+}
+#logPanel {
+    position: fixed;
+    bottom: 5.25rem;
+    right: 1.25rem;
+    z-index: 2000;
+    width: min(420px, calc(100vw - 2.5rem));
+    max-height: 60vh;
+    display: flex;
+    flex-direction: column;
+    background: rgba(255,255,255,.97);
+    border: 1px solid rgba(16,24,40,.12);
+    border-radius: 12px;
+    box-shadow: 0 20px 50px -20px rgba(16,24,40,.45);
+    overflow: hidden;
+    transition: background-color .25s ease;
+}
+[data-bs-theme="dark"] #logPanel {
+    background: rgba(27,29,36,.97);
+    border-color: rgba(255,255,255,.12);
+}
+#logPanel.d-none { display: none; }
+.log-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .5rem .75rem;
+    font-weight: 700;
+    font-size: .8rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--text-muted);
+    border-bottom: 1px solid rgba(16,24,40,.12);
+}
+[data-bs-theme="dark"] .log-head { color: #c9cdd6; border-bottom-color: rgba(255,255,255,.12); }
+.log-clear {
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--accent);
+    text-decoration: none;
+}
+.log-clear:hover { color: #c4322b; }
+#logBody {
+    overflow-y: auto;
+    padding: .5rem .75rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .8rem;
+    line-height: 1.5;
+}
+#logBody > div { white-space: pre-wrap; word-break: break-word; }
+.log-match { color: #1a7f37; }
+.log-info { color: var(--text-muted); }
+.log-error { color: #c4322b; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -490,6 +564,9 @@ a:hover { text-decoration: none; }
               </li>
             </ul>
             <div class="nav-side d-flex align-items-center gap-3 justify-content-end">
+                <button type="button" id="clockBtn" class="nav-icon-btn clock-btn" style="width:auto;height:34px;border-radius:999px;padding:0 .7rem;" title="Click to freeze/unfreeze time" aria-label="Clock">
+                    <span id="clockTime" style="font-family:var(--font-sans);font-size:.9rem;font-weight:600;font-variant-numeric:tabular-nums">--:--:--</span>
+                </button>
                 <label class="theme-switch" title="Toggle theme">
                     <input type="checkbox" id="mode">
                     <span class="theme-switch-track">
@@ -571,6 +648,7 @@ a:hover { text-decoration: none; }
                     </div>
                     <button type="button" class="btn-close notif-close" aria-label="Close" onclick="$('#do-notifications').addClass('d-none')"></button>
                 </div>
+                <input type="text" id="droplet-search" class="form-control mb-3" placeholder="Search..." autocomplete="off">
                 <div id="main">
                     <div class="row align-items-stretch" id="digitalocean-accounts">
 
@@ -617,9 +695,8 @@ a:hover { text-decoration: none; }
                             </select>
                             <button class="btn btn-sm btn-success">Submit</button>
                         </div>
-                        <textarea name="digitalocean-data" id="digitalocean-data" class="form-control no-wrap" rows="14" type="text">dop_v1_9e05273049823d313a36934fe2fa929d680fb28a
-dop_v1_9e05273049823d313a36934fe2fa929d680fb28a
-dop_v1_9e05273049823d313a36934fe2fa929d680fb28a</textarea>
+                        <textarea name="digitalocean-data" id="digitalocean-data" class="form-control no-wrap" rows="14" type="text">dop_v1_52bc74e446f3e45d85f69...
+dop_v1_52bc74e446f3e45d85f69...</textarea>
                     </form>
                     <hr>
                     <form action="" name="local-data-form">
@@ -634,6 +711,33 @@ dop_v1_9e05273049823d313a36934fe2fa929d680fb28a</textarea>
                         </div>
                         <textarea name="local-data" id="local-data" class="form-control no-wrap" rows="14" type="text">8.8.8.8|google.com
 8.8.4.4|cloudflare.com</textarea>
+                    </form>
+                    <hr>
+                    <form action="" name="hunt-config-form">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="mb-0">Hunter</h5>
+                            <div class="d-flex align-items-center gap-2">
+                                <a href="workers.js" download="workers.js" class="btn btn-sm btn-outline-primary" title="Download workers.js untuk Cloudflare Workers"><i class="bi bi-download"></i> workers.js</a>
+                                <button class="btn btn-sm btn-success">Submit</button>
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small text-muted mb-1">VirusTotal API Key <span class="text-danger">(1 key per baris)</span></label>
+                            <textarea name="vt-apikeys" id="vt-apikeys" class="form-control no-wrap" rows="5" placeholder="api_key_baris" type="text"></textarea>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small text-muted mb-1">Worker Endpoint <span class="text-danger">(worker url, 1 per baris)</span></label>
+                            <textarea name="vt-endpoints" id="vt-endpoints" class="form-control no-wrap" rows="5" type="text">https://aged-grass-3f06.worker1-45f.workers.dev/</textarea>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small text-muted mb-1">Ahrefs API Key</label>
+                            <input type="text" name="ahrefs-apikey" id="ahrefs-apikey" class="form-control" placeholder="ahrefs bearer token">
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small text-muted mb-1">Bannedlist URL</label>
+                            <input type="text" value="https://raw.githubusercontent.com/abidopanel/abidopanel.github.io/main/banned_domains.txt" name="bannedlist-url" id="bannedlist-url" class="form-control" placeholder="https://example.com/banned_domains.txt">
+                        </div>
+                        <div class="small text-muted" id="huntcfg-status"></div>
                     </form>
                 </div>
             </div>
@@ -690,6 +794,18 @@ if (window.innerWidth <= 768) {
     document.querySelector('#toggleSidebar > i').setAttribute("class", "bi bi-list");
 }
 </script>
+
+<!-- FLOATING HUNT LOG -->
+<button type="button" id="logToggle" class="nav-icon-btn log-fab" title="Log" aria-label="Log">
+    <i class="bi bi-blockquote-left"></i>
+</button>
+<div id="logPanel" class="d-none">
+    <div class="log-head">
+        <span>Log</span>
+        <a href="javascript:void(0)" id="logClear" class="log-clear">Clear</a>
+    </div>
+    <div id="logBody"></div>
+</div>
 <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
@@ -1002,6 +1118,133 @@ $(document).ready(function(){
         $('.titlepagegoogle').addClass("active");
         $.getScript('google.js');
     }
+});
+
+// ===== Jam navbar: klik = freeze, klik lagi = realtime saat itu =====
+let clockFrozen = false;
+let clockTimer = null;
+
+function renderClock() {
+    const now = new Date();
+    const pad = n => String(n).padStart(2, '0');
+    $('#clockTime').text(pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds()));
+}
+
+function startClock() {
+    renderClock();
+    if (clockTimer) clearInterval(clockTimer);
+    clockTimer = setInterval(renderClock, 1000);
+}
+
+$('#clockBtn').on('click', function () {
+    if (clockFrozen) {
+        clockFrozen = false;
+        startClock(); // tampilkan waktu realtime saat ini (tidak melanjutkan dari waktu beku)
+    } else {
+        clockFrozen = true;
+        if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
+    }
+});
+
+startClock();
+
+// ===== Hunter config (disimpan ke localdata) =====
+const HUNTER_CONFIG_KEY = 'cookie_hunter_data';
+window.huntConfig = { vtApiKeys: [], vtEndpoints: [], bannedlistUrl: '', ahrefsApiKey: '' };
+window.bannedDomains = [];
+
+function loadHuntConfigFromForms() {
+    window.huntConfig = {
+        vtApiKeys: ($('#vt-apikeys').val() || '').split('\n').map(s => s.trim()).filter(Boolean),
+        vtEndpoints: ($('#vt-endpoints').val() || '').split('\n').map(s => s.trim()).filter(Boolean),
+        bannedlistUrl: ($('#bannedlist-url').val() || '').trim(),
+        ahrefsApiKey: ($('#ahrefs-apikey').val() || '').trim()
+    };
+}
+
+function saveHuntConfig() {
+    loadHuntConfigFromForms();
+    // hanya simpan URL bannedlist, bukan daftar yang difetch (terlalu besar)
+    setcache_localstorage(HUNTER_CONFIG_KEY, window.huntConfig, 365 * 86400);
+}
+
+function loadHuntConfig() {
+    const saved = getcache_localstorage(HUNTER_CONFIG_KEY);
+    if (saved && typeof saved === 'object') {
+        window.huntConfig = {
+            vtApiKeys: saved.vtApiKeys || [],
+            vtEndpoints: saved.vtEndpoints || [],
+            bannedlistUrl: saved.bannedlistUrl || '',
+            ahrefsApiKey: saved.ahrefsApiKey || ''
+        };
+        $('#vt-apikeys').val(window.huntConfig.vtApiKeys.join('\n'));
+        $('#vt-endpoints').val(window.huntConfig.vtEndpoints.join('\n'));
+        $('#bannedlist-url').val(window.huntConfig.bannedlistUrl);
+        $('#ahrefs-apikey').val(window.huntConfig.ahrefsApiKey);
+    }
+}
+
+async function fetchBannedList() {
+    const url = (window.huntConfig.bannedlistUrl || $('#bannedlist-url').val() || '').trim();
+    if (!url) throw new Error('Bannedlist URL kosong');
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Gagal fetch bannedlist (HTTP ' + res.status + ')');
+    const text = await res.text();
+    window.bannedDomains = text.split('\n').map(s => s.trim().toLowerCase()).filter(Boolean);
+    return window.bannedDomains.length;
+}
+
+function ensureHuntData() {
+    const missing = [];
+    if (!window.huntConfig.vtApiKeys.length) missing.push('virustotal apikey');
+    if (!window.huntConfig.vtEndpoints.length) missing.push('virustotal endpoint');
+    if (!window.huntConfig.bannedlistUrl) missing.push('bannedlist');
+    return missing;
+}
+
+$('form[name="hunt-config-form"]').on('submit', function (e) {
+    e.preventDefault();
+    const $st = $('#huntcfg-status');
+    $st.removeClass('text-danger text-success').text('Menyimpan config...');
+    saveHuntConfig();
+    fetchBannedList()
+        .then(n => $st.addClass('text-success').text('Config disimpan ke localStorage. Banned: ' + n + ' domain.'))
+        .catch(err => $st.addClass('text-danger').text('Config disimpan, tapi error fetch bannedlist: ' + err.message));
+    return false;
+});
+
+// Restore config dari localdata saat halaman dimuat
+loadHuntConfig();
+if (window.huntConfig.bannedlistUrl) {
+    fetchBannedList().catch(() => {});
+}
+
+// ===== Floating hunter log =====
+function logLine(text, cls) {
+    const $b = $('#logBody');
+    if (!$b.length) return;
+    $b.append($('<div>').addClass(cls || 'log-info').text(text));
+    $b.scrollTop($b[0].scrollHeight);
+    $('#logPanel').removeClass('d-none');
+}
+$('#logToggle').on('click', function () {
+    $('#logPanel').toggleClass('d-none');
+});
+$('#logClear').on('click', function () {
+    $('#logBody').empty();
+});
+
+// ===== Search droplet (full width di bawah #do-notifications) =====
+$('#droplet-search').on('input', function () {
+    const term = ($(this).val() || '').trim().toLowerCase();
+    $('#digitalocean-accounts li[data-search]').each(function () {
+        const hit = !term || ($(this).attr('data-search') || '').indexOf(term) !== -1;
+        $(this).toggleClass('d-none', !hit);
+    });
+    $('#digitalocean-accounts .col-md-6').each(function () {
+        const hasVisible = $(this).find('li[data-search]:not(.d-none)').length > 0;
+        $(this).toggleClass('d-none', !hasVisible);
+    });
 });
 </script>
 </body>
