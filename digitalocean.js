@@ -757,7 +757,7 @@ async function buildDropletLi(d, keys) {
                     <span class="domain-toggle-wrap${domains.length ? '' : ' d-none'}">${domainToggleBtn}</span>
                 </div>
             </div>
-            <div class="text-muted" data-metrics="${d.id}">cpu: ${metrics_cpu} | memory : ${metrics_memory} | uptime : ${formatUptime(d.created_at)}</div>
+            <div class="text-muted" data-metrics="${d.id}">cpu: ${metrics_cpu} | memory : ${metrics_memory} | uptime : <span class="uptime-live" data-uptime="${d.created_at}">${formatUptime(d.created_at)}</span></div>
             <div class="text-muted" data-metrics="${d.id}">vcpu: ${d.vcpus} | ram : ${d.memory} | disk : ${d.disk}GB</div>
             <div class="droplet-domains" style="max-height:0;overflow:hidden;transition:max-height .22s ease">${listHtml}</div>
         </div>
@@ -1237,7 +1237,7 @@ $(document).on('click', '.droplet-create', async function () {
 
     $(this).prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Creating...');
     const created = await doCreateDroplets(token, count);
-    $(this).prop('disabled', false).html('<i class="bi bi-repeat"></i> Droplets');
+    $(this).prop('disabled', false).html('<i class="bi bi-pencil-square"></i> Droplets');
 
     if (created.length) {
         await appendCreatedDroplets(token, created);
@@ -1384,8 +1384,10 @@ async function droplet_metrics(droplet, token) {
 function formatUptime(createdAt) {
     const created = new Date(createdAt).getTime();
     if (isNaN(created)) return 'N/A';
-
-    let sec = Math.floor((Date.now() - created) / 1000);
+    return formatUptimeDate(created);
+}
+function formatUptimeDate(createdMs) {
+    let sec = Math.floor((Date.now() - createdMs) / 1000);
     if (sec < 0) sec = 0;
 
     const d = Math.floor(sec / 86400);
@@ -1431,3 +1433,15 @@ function copyDropletIpFallback(ip) {
         setTimeout(function () { $el.text(old); }, 1200);
     }
 }
+
+// Update uptime berjalan secara ringan: satu interval global, hanya update teks elemen yang ada.
+setInterval(function () {
+    const nodes = document.querySelectorAll('.uptime-live[data-uptime]');
+    for (let i = 0; i < nodes.length; i++) {
+        const el = nodes[i];
+        const created = new Date(el.getAttribute('data-uptime')).getTime();
+        if (isNaN(created)) continue;
+        const t = formatUptimeDate(created);
+        if (el.textContent !== t) el.textContent = t;
+    }
+}, 30000);
