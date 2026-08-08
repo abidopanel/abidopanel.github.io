@@ -464,7 +464,8 @@ function getRegistrableDomain(domain) {
 async function fetchDomainAge(domain) {
   const registrable = getRegistrableDomain(domain) || domain;
   try {
-    const resp = await fetch(`https://rdap.verisign.com/com/v1/domain/${encodeURIComponent(registrable)}`, {
+    const resp = await fetch(`https://rdap.org/domain/${encodeURIComponent(registrable)}`, {
+      redirect: "follow", // rdap.org redirect ke registri TLD (mis. verisign.com untuk .com)
       headers: { "Accept": "application/rdap+json" },
     });
     if (!resp.ok) return { age: null, created: null };
@@ -511,20 +512,25 @@ async function handleSeoquake(params, cacheTtl) {
   const traffic = xmlTag(infoText, "traffic");
   const rank = xmlTag(infoText, "rank");
 
-  let links = "";
-  try {
-    const blResp = await fetch(`https://bl.publicapi.semrush.com/?url=${encodeURIComponent(squDomain)}&ref=sq`);
-    if (blResp.ok) {
-      const blText = await blResp.text();
-      links = xmlTag(blText, "links") || "";
-    }
-  } catch (e) {
-    // link lookup best-effort
-  }
+  // Fetch links + domain age secara paralel (tidak menunggu <domain>),
+  // age langsung memakai parameter &domain= agar lebih cepat.
+  const [links, ageInfo] = await Promise.all([
+    (async () => {
+      try {
+        const blResp = await fetch(`https://bl.publicapi.semrush.com/?url=${encodeURIComponent(squDomain)}&ref=sq`);
+        if (blResp.ok) {
+          const blText = await blResp.text();
+          return xmlTag(blText, "links") || "";
+        }
+      } catch (e) {
+        // link lookup best-effort
+      }
+      return "";
+    })(),
+    fetchDomainAge(domain),
+  ]);
 
-  const { age, created } = await fetchDomainAge(domain);
-
-  return json(envelope("ok", { domain, traffic, rank, links, age, created }), 200, cacheTtl);
+  return json(envelope("ok", { domain, traffic, rank, links, age: ageInfo.age, created: ageInfo.created }), 200, cacheTtl);
 }
 
 export default {
