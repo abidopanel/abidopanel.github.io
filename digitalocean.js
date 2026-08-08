@@ -742,27 +742,54 @@ async function buildDropletLi(d, keys) {
 }
 
 // Append droplet yang baru dibuat ke card (tanpa reload)
+// Poll sampai SEMUA droplet yang dibuat tampil (punya public IP), lalu append bertahap.
 async function appendCreatedDroplets(token, createdIds) {
     if (!createdIds.length) return;
-    try {
-        const droplets = await digitalocean_droplets(token);
-        const newOnes = (droplets.droplets || []).filter(d => createdIds.indexOf(d.id) !== -1);
-        let html = '';
-        for (const d of newOnes) {
-            html += await buildDropletLi(d, token);
+
+    const rendered = new Set();
+    const $card = $('.droplet-hunt[data-token="' + token + '"]').closest('.card');
+    const $list = $card.find('.card-body > ul.list-group');
+    const deadline = Date.now() + 120000; // maksimal 2 menit
+    let addedTotal = 0;
+
+    while (Date.now() < deadline) {
+        let droplets = { droplets: [] };
+        try {
+            droplets = await digitalocean_droplets(token);
+        } catch (e) {
+            // lanjut coba lagi
         }
-        if (html) {
-            const $card = $('.droplet-hunt[data-token="' + token + '"]').closest('.card');
-            $card.find('.card-body > ul.list-group').append(html);
-            if (window.doTotalDroplets !== undefined) window.doTotalDroplets += newOnes.length;
-            bumpDropletCount($card, newOnes.length);
-            syncSelectAll($card);
-            renderDoNotifications();
-            enrichAllDomains($card);
+
+        const pending = (droplets.droplets || []).filter(d =>
+            createdIds.indexOf(d.id) !== -1 && !rendered.has(d.id)
+        );
+
+        for (const d of pending) {
+            const html = await buildDropletLi(d, token);
+            if (html) {
+                $list.append(html);
+                rendered.add(d.id);
+                addedTotal++;
+            }
         }
-    } catch (e) {
-        logLine('[create] Gagal memuat droplet baru: ' + (e.message || e), 'log-error');
+
+        const stillMissing = createdIds.filter(id => !rendered.has(id));
+        if (!stillMissing.length) break;
+
+        logLine('[create] Menunggu IP ' + stillMissing.length + ' droplet...', 'log-info');
+        await new Promise(r => setTimeout(r, 10000));
     }
+
+    if (addedTotal) {
+        if (window.doTotalDroplets !== undefined) window.doTotalDroplets += addedTotal;
+        bumpDropletCount($card, addedTotal);
+        syncSelectAll($card);
+        renderDoNotifications();
+        enrichAllDomains($card);
+    }
+
+    const missing = createdIds.filter(id => !rendered.has(id));
+    if (missing.length) logLine('[create] ' + missing.length + ' droplet belum tampil (IP belum muncul)', 'log-error');
 }
 
 // ===== CREATE DROPLETS (tanpa cleanup/destroy) =====
