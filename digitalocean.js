@@ -648,7 +648,7 @@ async function buildDropletLi(d, keys) {
         window.availableSizes[d.id] = d.region.sizes;
     }
 
-    const ipv = `<a class="link-body-emphasis clicked" href="https://${dropletIp}:8443/" target="_blank">${dropletIp}</a>`;
+    const ipv = `<a class="link-body-emphasis clicked droplet-ip-copy" href="javascript:void(0)" title="Klik untuk salin IP" onClick="copyDropletIp(this, '${dropletIp}')">${dropletIp}</a>`;
 
     let statusd = '';
     if (d.status == 'active') {
@@ -1329,4 +1329,34 @@ function formatDollar(val) {
     val = parseFloat(val || 0);
 
     return (val < 0) ? '<span class="text-danger">-$' + Math.abs(val).toFixed(2) + "</span>" : '<span class="text-success">$' + val.toFixed(2) + '</span>';
+}
+function copyDropletIp(el, ip) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(ip).then(function () {
+            const $el = $(el);
+            const old = $el.text();
+            $el.text('Copied!');
+            setTimeout(function () { $el.text(old); }, 1200);
+        }).catch(function () {
+            copyDropletIpFallback(ip);
+        });
+    } else {
+        copyDropletIpFallback(ip);
+    }
+}
+function copyDropletIpFallback(ip) {
+    const ta = document.createElement('textarea');
+    ta.value = ip;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+    const $el = $('.droplet-ip-copy').first();
+    if ($el.length) {
+        const old = $el.text();
+        $el.text('Copied!');
+        setTimeout(function () { $el.text(old); }, 1200);
+    }
 }
