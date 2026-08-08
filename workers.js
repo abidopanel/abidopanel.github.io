@@ -66,6 +66,8 @@ function envelope(status, opts = {}) {
     traffic: opts.traffic !== undefined ? opts.traffic : null,
     rank: opts.rank !== undefined ? opts.rank : null,
     links: opts.links !== undefined ? opts.links : null,
+    age: opts.age !== undefined ? opts.age : null,
+    created: opts.created !== undefined ? opts.created : null,
     message: opts.message !== undefined ? opts.message : null,
   };
 }
@@ -287,6 +289,27 @@ function xmlTag(text, tag) {
   return m && m[1] !== undefined ? m[1].trim() : null;
 }
 
+// Ambil tanggal registrasi domain via RDAP publik, lalu hitung usia (hari).
+async function fetchDomainAge(domain) {
+  try {
+    const resp = await fetch(`https://rdap.org/domain/${encodeURIComponent(domain)}`, {
+      headers: { "Accept": "application/rdap+json" },
+    });
+    if (!resp.ok) return { age: null, created: null };
+    const body = await resp.json();
+    const events = (body && body.events) || [];
+    const reg = events.find(e => (e.eventAction || "").toLowerCase() === "registration");
+    const created = reg && reg.eventDate ? reg.eventDate : null;
+    if (!created) return { age: null, created: null };
+    const createdMs = new Date(created).getTime();
+    if (Number.isNaN(createdMs)) return { age: null, created: null };
+    const age = Math.max(0, Math.floor((Date.now() - createdMs) / 86400000));
+    return { age, created };
+  } catch (e) {
+    return { age: null, created: null };
+  }
+}
+
 async function handleSeoquake(params, cacheTtl) {
   const domain = (params.get("domain") || "").trim();
   if (!domain) {
@@ -327,7 +350,9 @@ async function handleSeoquake(params, cacheTtl) {
     // link lookup best-effort
   }
 
-  return json(envelope("ok", { domain, traffic, rank, links }), 200, cacheTtl);
+  const { age, created } = await fetchDomainAge(domain);
+
+  return json(envelope("ok", { domain, traffic, rank, links, age, created }), 200, cacheTtl);
 }
 
 export default {

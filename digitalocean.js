@@ -23,6 +23,9 @@ $(document).ready(async function () {
     });
     window.localdata_ips = ips;
 
+    // Simpan HTML tiap kartu per index agar urut sesuai daftar token
+    const cardHtmls = new Array(do_api_keys.length);
+
     await Promise.all(do_api_keys.map(async (keys, i) => {
         let dts = await digitalocean_account(keys);
 
@@ -48,7 +51,7 @@ $(document).ready(async function () {
                 </div>
             </div>`;
 
-            $('<div>').html(htm).contents().addClass('card-append-anim').appendTo('#digitalocean-accounts');
+            cardHtmls[i] = htm;
 
             return;
         }
@@ -83,7 +86,7 @@ $(document).ready(async function () {
 	                </div>
 	            </div>
 	        </div>`;
-	        $('<div>').html(htm).contents().addClass('card-append-anim').appendTo('#digitalocean-accounts');
+	        cardHtmls[i] = htm;
         }else{
             let [billing, droplets] = await Promise.all([
                 digitalocean_balance(keys),
@@ -185,10 +188,15 @@ $(document).ready(async function () {
                     </div>
                 </div>
             </div>`;
-	        $('<div>').html(htm).contents().addClass('card-append-anim').appendTo('#digitalocean-accounts');
+	        cardHtmls[i] = htm;
         }
     })
     );
+
+    // Append berurutan sesuai urutan token (bukan urutan selesai)
+    cardHtmls.forEach((htm, i) => {
+        if (htm) $('<div>').html(htm).contents().addClass('card-append-anim').appendTo('#digitalocean-accounts');
+    });
 
     renderDoNotifications();
 
@@ -913,7 +921,7 @@ async function enrichDomain(domain) {
     const cached = enrichCachedValue(domain);
     if (cached) return cached;
 
-    const result = { dr: null, rank: null, traffic: null, links: null };
+    const result = { dr: null, rank: null, traffic: null, links: null, age: null };
     const ep = workerBaseUrl();
     if (ep) {
         const sep = ep.includes('?') ? '&' : '?';
@@ -935,6 +943,7 @@ async function enrichDomain(domain) {
                     if (j.rank !== null && j.rank !== undefined) result.rank = j.rank;
                     if (j.traffic !== null && j.traffic !== undefined) result.traffic = j.traffic;
                     if (j.links !== null && j.links !== undefined) result.links = j.links;
+                    if (j.age !== null && j.age !== undefined) result.age = j.age;
                 }
             }
         } catch (e) {
@@ -951,7 +960,19 @@ function formatEnrich(r) {
     if (r.rank !== null && r.rank !== undefined) parts.push('rank: ' + r.rank);
     if (r.traffic !== null && r.traffic !== undefined) parts.push('traffic: ' + r.traffic);
     if (r.links !== null && r.links !== undefined) parts.push('links: ' + r.links);
+    if (r.age !== null && r.age !== undefined) parts.push('age: ' + formatAge(r.age));
     return parts.length ? parts.join(' | ') : '...';
+}
+
+function formatAge(days) {
+    days = Number(days);
+    if (!isFinite(days) || days <= 0) return days + 'd';
+    if (days >= 365) {
+        const y = days / 365;
+        return (y >= 10 ? Math.round(y) : (Math.round(y * 10) / 10)) + ' yr';
+    }
+    if (days >= 30) return Math.floor(days / 30) + ' mo';
+    return days + 'd';
 }
 
 async function enrichAllDomains($scope) {
