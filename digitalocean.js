@@ -198,6 +198,7 @@ $(document).ready(async function () {
                             <span>Droplets: <b class="do-droplet-count">`+droplets.meta.total+`</b>/`+data.droplet_limit+`</span>
                         </div>
                         <div class="d-flex justify-content-end align-items-center gap-2 flex-wrap">
+                            <button type="button" class="btn btn-sm btn-outline-primary droplet-copy-ips" title="Copy all droplet IPs"><i class="bi bi-copy"></i> Copy IPs</button>
                             <select class="form-select form-select-sm create-count" title="Jumlah droplet" style="width:auto">
                                 ${createOptions}
                             </select>
@@ -1246,6 +1247,41 @@ $(document).on('click', '.droplet-create', async function () {
 $(document).on('click', '.droplet-hunt', async function () {
     await huntCard($(this).data('token'));
 });
+
+$(document).on('click', '.droplet-copy-ips', function () {
+    const $card = $(this).closest('.card');
+    const ips = [];
+    $card.find('.droplet-select').each(function () {
+        const ip = $(this).data('ip');
+        if (ip) ips.push(ip);
+    });
+    if (!ips.length) { alert('Tidak ada droplet pada akun ini'); return; }
+    copyText(ips.join('\n'), $(this));
+});
+
+function copyText(text, $btn) {
+    const done = function () {
+        const old = $btn.html();
+        $btn.html('<i class="bi bi-check2"></i> Copied');
+        setTimeout(function () { $btn.html(old); }, 1200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function () { fallbackCopy(text); done(); });
+    } else {
+        fallbackCopy(text);
+        done();
+    }
+}
+function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+}
 
 const CACHE_TTL = 300; // 5 menit
 
