@@ -23,8 +23,27 @@ $(document).ready(async function () {
     });
     window.localdata_ips = ips;
 
-    // Simpan HTML tiap kartu per index agar urut sesuai daftar token
-    const cardHtmls = new Array(do_api_keys.length);
+    // Tampilkan loading placeholder untuk tiap akun (urutan tetap), lalu isi saat selesai
+    do_api_keys.forEach((_, i) => {
+        const placeholder = `
+        <div class="col-md-6 mb-3" data-card-index="${i}">
+            <div class="card h-100">
+                <div class="card-body d-flex align-items-center justify-content-center" style="min-height:140px">
+                    <div class="text-center text-muted">
+                        <div class="spinner-border spinner-border-sm text-primary mb-2" role="status"></div>
+                        <div>Loading Account #${i + 1}...</div>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        $('<div>').html(placeholder).contents().appendTo('#digitalocean-accounts');
+    });
+
+    function replaceCard(i, htm) {
+        $('#digitalocean-accounts [data-card-index="' + i + '"]').replaceWith(
+            $('<div>').html(htm).contents().addClass('card-append-anim')
+        );
+    }
 
     await Promise.all(do_api_keys.map(async (keys, i) => {
         let dts = await digitalocean_account(keys);
@@ -51,7 +70,7 @@ $(document).ready(async function () {
                 </div>
             </div>`;
 
-            cardHtmls[i] = htm;
+            replaceCard(i, htm);
 
             return;
         }
@@ -86,7 +105,7 @@ $(document).ready(async function () {
 	                </div>
 	            </div>
 	        </div>`;
-	        cardHtmls[i] = htm;
+	        replaceCard(i, htm);
         }else{
             let [billing, droplets] = await Promise.all([
                 digitalocean_balance(keys),
@@ -188,15 +207,10 @@ $(document).ready(async function () {
                     </div>
                 </div>
             </div>`;
-	        cardHtmls[i] = htm;
+	        replaceCard(i, htm);
         }
     })
     );
-
-    // Append berurutan sesuai urutan token (bukan urutan selesai)
-    cardHtmls.forEach((htm, i) => {
-        if (htm) $('<div>').html(htm).contents().addClass('card-append-anim').appendTo('#digitalocean-accounts');
-    });
 
     renderDoNotifications();
 
