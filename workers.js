@@ -460,27 +460,49 @@ function getRegistrableDomain(domain) {
   return labels.slice(-(keep + suffixLen)).join(".");
 }
 
-// Ambil tanggal registrasi domain via RDAP publik, lalu hitung usia (hari).
-async function fetchDomainAge(domain) {
-  const registrable = getRegistrableDomain(domain) || domain;
+function parseRdapCreated(body) {
+  const events = (body && body.events) || [];
+  const reg = events.find(e => (e.eventAction || "").toLowerCase() === "registration");
+  return reg && reg.eventDate ? reg.eventDate : null;
+}
+
+async function rdapFetch(url, timeoutMs) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const resp = await fetch(`https://rdap.org/domain/${encodeURIComponent(registrable)}`, {
+    const resp = await fetch(url, {
       redirect: "follow", // rdap.org redirect ke registri TLD (mis. verisign.com untuk .com)
+      signal: ctrl.signal,
       headers: { "Accept": "application/rdap+json" },
     });
-    if (!resp.ok) return { age: null, created: null };
-    const body = await resp.json();
-    const events = (body && body.events) || [];
-    const reg = events.find(e => (e.eventAction || "").toLowerCase() === "registration");
-    const created = reg && reg.eventDate ? reg.eventDate : null;
-    if (!created) return { age: null, created: null };
-    const createdMs = new Date(created).getTime();
-    if (Number.isNaN(createdMs)) return { age: null, created: null };
-    const age = Math.max(0, Math.floor((Date.now() - createdMs) / 86400000));
-    return { age, created };
+    if (!resp.ok) return null;
+    return await resp.json();
   } catch (e) {
-    return { age: null, created: null };
+    return null;
+  } finally {
+    clearTimeout(t);
   }
+}
+
+// Ambil tanggal registrasi domain via RDAP, lalu hitung usia (hari).
+// Fallback: rdap.org (semua TLD) -> rdap.verisign.com (khusus .com/.net)
+async function fetchDomainAge(domain) {
+  const registrable = getRegistrableDomain(domain) || domain;
+  const isComNet = /\.(com|net)$/i.test(registrable);
+
+  let body = await rdapFetch(`https://rdap.org/domain/${encodeURIComponent(registrable)}`, 8000);
+  if (!body && isComNet) {
+    body = await rdapFetch(`https://rdap.verisign.com/com/v1/domain/${encodeURIComponent(registrable)}`, 8000);
+  }
+
+  const created = body ? parseRdapCreated(body) : null;
+  if (!created) return { age: null, created: null };
+
+  const createdMs = new Date(created).getTime();
+  if (Number.isNaN(createdMs)) return { age: null, created: null };
+
+  const age = Math.max(0, Math.floor((Date.now() - createdMs) / 86400000));
+  return { age, created };
 }
 
 async function handleSeoquake(params, cacheTtl) {
@@ -510,7 +532,7 @@ async function handleSeoquake(params, cacheTtl) {
     return json(envelope("notfound", { domain, age: ageInfo.age, created: ageInfo.created, message: null }), 200, cacheTtl);
   }
 
-  const squDomain = xmlTag(infoText, "domain") || domain;
+  const squDomain = domain; // langsung dari parameter &domain=, bukan tag <domain>
   const traffic = xmlTag(infoText, "traffic");
   const rank = xmlTag(infoText, "rank");
 
