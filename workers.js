@@ -505,7 +505,9 @@ async function handleSeoquake(params, cacheTtl) {
 
   const status = (xmlTag(infoText, "status") || "").toLowerCase();
   if (status === "notfound") {
-    return json(envelope("notfound", { domain, message: null }), 200, cacheTtl);
+    // seoquake tidak punya data domain, tapi age tetap bisa diambil dari RDAP
+    const ageInfo = await fetchDomainAge(domain);
+    return json(envelope("notfound", { domain, age: ageInfo.age, created: ageInfo.created, message: null }), 200, cacheTtl);
   }
 
   const squDomain = xmlTag(infoText, "domain") || domain;
