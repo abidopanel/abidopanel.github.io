@@ -631,7 +631,6 @@ $(document).on('click', '.droplet-bulk-delete', function () {
                 if ((results.ok + results.fail) === items.length) {
                     syncSelectAll(card);
                     renderDoNotifications();
-                    alert(results.fail > 0 ? 'Berhasil: ' + results.ok + ', Gagal: ' + results.fail + ' droplet.' : 'Semua ' + results.ok + ' droplet berhasil dihapus.');
                 }
             }
         });
