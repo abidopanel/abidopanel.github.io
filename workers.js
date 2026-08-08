@@ -289,10 +289,182 @@ function xmlTag(text, tag) {
   return m && m[1] !== undefined ? m[1].trim() : null;
 }
 
+// Daftar multi-part TLD umum (heuristik) -> untuk dapat registrable domain dari subdomain
+const MULTI_PART_TLDS = [
+  // UK
+  "co.uk","org.uk","ac.uk","gov.uk","me.uk","net.uk","ltd.uk","plc.uk","sch.uk","nhs.uk","police.uk",
+  // Australia / NZ
+  "com.au","net.au","org.au","edu.au","gov.au","id.au","asn.au",
+  "co.nz","net.nz","org.nz","ac.nz","govt.nz","geek.nz","kiwi.nz",
+  // Japan
+  "co.jp","ne.jp","or.jp","ac.jp","go.jp","gr.jp","ad.jp","ed.jp",
+  // Indonesia
+  "co.id","or.id","ac.id","go.id","web.id","net.id","sch.id","mil.id","desa.id","biz.id","my.id","ponpes.id",
+  // Brazil / Latam
+  "com.br","net.br","org.br","gov.br","edu.br","art.br","adv.br","blog.br","eco.br","ind.br","inf.br","med.br","rec.br","srv.br","tmp.br","wiki.br",
+  "com.mx","org.mx","net.mx","gob.mx","edu.mx",
+  "com.ar","net.ar","org.ar","gob.ar","edu.ar",
+  "com.co","net.co","org.co","edu.co","gov.co",
+  "com.pe","net.pe","org.pe","gob.pe","edu.pe",
+  "com.ve","net.ve","org.ve","gob.ve","edu.ve",
+  "com.cl","net.cl","gob.cl","edu.cl",
+  "com.bo","net.bo","org.bo","gob.bo","edu.bo",
+  "com.ec","net.ec","org.ec","gob.ec","edu.ec",
+  "com.uy","net.uy","org.uy","gub.uy","edu.uy",
+  // China / Taiwan / Hong Kong
+  "com.cn","net.cn","org.cn","gov.cn","edu.cn","ac.cn","mil.cn",
+  "com.tw","net.tw","org.tw","edu.tw","gov.tw","idv.tw","club.tw","biz.tw",
+  "com.hk","net.hk","org.hk","edu.hk","gov.hk","idv.hk",
+  "com.mo","net.mo","org.mo","edu.mo","gov.mo",
+  // Korea
+  "co.kr","or.kr","ne.kr","ac.kr","re.kr","go.kr","mil.kr",
+  "com.kr","net.kr","org.kr","edu.kr","gov.kr",
+  // India / South Asia
+  "com.in","net.in","org.in","ac.in","gov.in","res.in","gen.in","firm.in","ind.in",
+  "co.in","biz.in",
+  "com.pk","net.pk","org.pk","edu.pk","gov.pk","ac.pk",
+  "com.bd","net.bd","org.bd","edu.bd","gov.bd",
+  "com.np","net.np","org.np","edu.np","gov.np",
+  "com.lk","net.lk","org.lk","edu.lk","gov.lk",
+  // SE Asia
+  "com.sg","net.sg","org.sg","edu.sg","gov.sg",
+  "com.my","net.my","org.my","edu.my","gov.my",
+  "co.th","in.th","ac.th","go.th","or.th","net.th",
+  "com.ph","net.ph","org.ph","gov.ph","edu.ph",
+  "com.vn","net.vn","org.vn","edu.vn","gov.vn",
+  "co.id", "co.in", // dedup guard (idempotent, harmless)
+  // Middle East
+  "com.sa","net.sa","org.sa","gov.sa","edu.sa",
+  "co.ae","net.ae","org.ae","ac.ae","gov.ae",
+  "com.eg","net.eg","org.eg","edu.eg","gov.eg",
+  "com.tr","net.tr","org.tr","edu.tr","gov.tr","av.tr",
+  "com.ir","net.ir","org.ir","ac.ir","gov.ir",
+  "co.il","org.il","ac.il","gov.il","muni.il","net.il",
+  "com.qa","net.qa","org.qa","gov.qa","edu.qa",
+  "com.om","net.om","org.om","gov.om","edu.om",
+  "com.kw","net.kw","org.kw","edu.kw","gov.kw",
+  // Europe
+  "co.at","or.at","ac.at","gv.at",
+  "co.nl","net.nl","org.nl","firm.nl","web.nl","amsterdam.nl",
+  "co.be","net.be","org.be","ac.be",
+  "com.es","net.es","org.es","gob.es","edu.es",
+  "co.it","net.it","org.it","edu.it","gov.it",
+  "com.pt","net.pt","org.pt","edu.pt","gov.pt",
+  "com.fr","net.fr","org.fr","gouv.fr","asso.fr",
+  "com.de","net.de","org.de","co.de",
+  "co.ch","net.ch","org.ch","edu.ch",
+  "com.ua","net.ua","org.ua","gov.ua","edu.ua","in.ua",
+  "com.ru","net.ru","org.ru","edu.ru","gov.ru","msk.ru","spb.ru",
+  "com.pl","net.pl","org.pl","edu.pl","gov.pl",
+  "com.ro","net.ro","org.ro","edu.ro","gov.ro",
+  "com.gr","net.gr","org.gr","edu.gr","gov.gr",
+  "com.se","net.se","org.se",
+  "co.no","net.no","org.no","com.no",
+  "com.fi","net.fi","org.fi",
+  "com.dk","net.dk","org.dk",
+  "com.ee","net.ee","org.ee",
+  "com.lv","net.lv","org.lv","gov.lv",
+  "com.lt","net.lt","org.lt","gov.lt",
+  "com.by","net.by","org.by","gov.by",
+  "com.kz","net.kz","org.kz","edu.kz","gov.kz",
+  "co.hr","com.hr","net.hr","org.hr",
+  "com.rs","net.rs","org.rs","edu.rs","gov.rs",
+  "com.si","net.si","org.si","gov.si",
+  "com.sk","net.sk","org.sk","gov.sk",
+  "com.cz","net.cz","org.cz",
+  "com.hu","net.hu","org.hu","info.hu",
+  "co.is","org.is","net.is",
+  "com.mt","net.mt","org.mt","gov.mt",
+  "com.cy","net.cy","org.cy","ac.cy","gov.cy",
+  "com.lu","net.lu","org.lu",
+  "com.ie","net.ie","org.ie","gov.ie",
+  "co.im","net.im","org.im",
+  // Africa
+  "co.za","net.za","org.za","gov.za","ac.za","web.za","edu.za",
+  "com.ng","net.ng","org.ng","edu.ng","gov.ng",
+  "com.ke","net.ke","org.ke","ac.ke","go.ke",
+  "com.gh","net.gh","org.gh","edu.gh","gov.gh",
+  "com.tz","net.tz","org.tz","ac.tz","go.tz",
+  "com.ug","net.ug","org.ug","ac.ug","go.ug",
+  "co.tz", "co.ke", // dedup guard
+  "com.et","net.et","org.et","edu.et","gov.et",
+  "com.mu","net.mu","org.mu",
+  "co.zw","org.zw","ac.zw","gov.zw",
+  "com.na","net.na","org.na","edu.na",
+  "com.mw","net.mw","org.mw","ac.mw","gov.mw",
+  "com.zm","net.zm","org.zm","ac.zm","gov.zm",
+  "co.bw","org.bw","ac.bw","gov.bw",
+  "com.sd","net.sd","org.sd","edu.sd","gov.sd",
+  "com.ly","net.ly","org.ly","edu.ly","gov.ly",
+  "com.ma","net.ma","org.ma","gov.ma","ac.ma",
+  "com.dz","net.dz","org.dz","gov.dz","edu.dz",
+  "com.tn","net.tn","org.tn","gov.tn","edu.tn",
+  "com.ci","net.ci","org.ci","edu.ci","gov.ci",
+  // Other / misc
+  "com.pr","net.pr","org.pr","edu.pr","gov.pr",
+  "com.gt","net.gt","org.gt","gob.gt","edu.gt",
+  "com.sv","net.sv","org.sv","gob.sv","edu.sv",
+  "com.hn","net.hn","org.hn","gob.hn","edu.hn",
+  "com.cr","net.cr","org.cr","go.cr","ed.cr",
+  "com.pa","net.pa","org.pa","gob.pa","edu.pa",
+  "com.ni","net.ni","org.ni","gob.ni","edu.ni",
+  "com.do","net.do","org.do","gob.do","edu.do",
+  "com.py","net.py","org.py","gov.py","edu.py",
+  "com.cu","net.cu","org.cu","gov.cu","edu.cu",
+  "com.bh","net.bh","org.bh","gov.bh","edu.bh",
+  "com.jo","net.jo","org.jo","edu.jo","gov.jo",
+  "com.lb","net.lb","org.lb","edu.lb","gov.lb",
+  "com.ps","net.ps","org.ps","edu.ps","gov.ps",
+  "com.sy","net.sy","org.sy","edu.sy","gov.sy",
+  "com.iq","net.iq","org.iq","edu.iq","gov.iq",
+  "com.ye","net.ye","org.ye","edu.ye","gov.ye",
+  "com.mm","net.mm","org.mm","edu.mm","gov.mm",
+  "com.kh","net.kh","org.kh","edu.kh","gov.kh",
+  "com.la","net.la","org.la","edu.la","gov.la",
+  "com.mn","net.mn","org.mn","edu.mn","gov.mn",
+  "com.af","net.af","org.af","edu.af","gov.af",
+  "com.az","net.az","org.az","edu.az","gov.az",
+  "com.ge","net.ge","org.ge","edu.ge","gov.ge",
+  "com.am","net.am","org.am","edu.am","gov.am",
+  "com.uz","net.uz","org.uz","edu.uz","gov.uz",
+  "com.tj","net.tj","org.tj","edu.tj","gov.tj",
+  "com.kg","net.kg","org.kg","edu.kg","gov.kg",
+  "com.tm","net.tm","org.tm","edu.tm","gov.tm",
+  "com.mk","net.mk","org.mk","edu.mk","gov.mk",
+  "com.al","net.al","org.al","edu.al","gov.al",
+  "com.md","net.md","org.md","edu.md","gov.md",
+  "com.ba","net.ba","org.ba","edu.ba","gov.ba",
+  "com.me","net.me","org.me","ac.me","gov.me",
+  "com.mk", // dedup guard
+  "gen.tr","web.tr","info.tr","biz.tr","name.tr",
+];
+
+// Dapatkan registrable domain (eTLD+1) dengan heuristik multi-part TLD.
+// "a.b.example.com" -> "example.com"; "a.b.co.uk" -> "b.co.uk"
+function getRegistrableDomain(domain) {
+  const labels = String(domain || "").toLowerCase().split(".").filter(Boolean);
+  if (labels.length < 2) return labels.join(".");
+
+  // cek public suffix multi-part terpanjang di akhir
+  let suffixLen = 1;
+  for (const tld of MULTI_PART_TLDS) {
+    const tldLabels = tld.split(".");
+    if (labels.slice(-tldLabels.length).join(".") === tld) {
+      suffixLen = tldLabels.length;
+      break;
+    }
+  }
+  // eTLD+1 = satu label di atas public suffix
+  const extra = labels.length - suffixLen - 1;
+  const keep = Math.max(1, Math.min(extra, labels.length - 2));
+  return labels.slice(-(keep + suffixLen)).join(".");
+}
+
 // Ambil tanggal registrasi domain via RDAP publik, lalu hitung usia (hari).
 async function fetchDomainAge(domain) {
+  const registrable = getRegistrableDomain(domain) || domain;
   try {
-    const resp = await fetch(`https://rdap.org/domain/${encodeURIComponent(domain)}`, {
+    const resp = await fetch(`https://rdap.verisign.com/com/v1/domain/${encodeURIComponent(registrable)}`, {
       headers: { "Accept": "application/rdap+json" },
     });
     if (!resp.ok) return { age: null, created: null };
